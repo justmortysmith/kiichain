@@ -1,0 +1,36 @@
+name: E2E
+on:
+  workflow_dispatch: 
+
+permissions:
+  contents: read
+
+jobs:
+  test-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.x
+      - uses: actions/checkout@v4
+      - uses: technote-space/get-diff-action@v6.1.2
+        id: git_diff
+        with:
+          PATTERNS: |
+            **/*.go
+            go.mod
+            go.sum
+            **/go.mod
+            **/go.sum
+            **/Makefile
+            Makefile
+      - name: Build Kiichain Docker Image
+        if: env.GIT_DIFF
+        run: make docker-build-debug
+      - name: Build Hermes Docker Image
+        if: env.GIT_DIFF
+        run: make docker-build-hermes
+      - name: Test E2E
+        if: env.GIT_DIFF
+        run: make test-e2e
