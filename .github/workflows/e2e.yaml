@@ -15,8 +15,6 @@ jobs:
   test-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      image-tag: ${{ steps.set-tag.outputs.tag }}
     steps:
       - uses: actions/setup-go@v5
         with:
@@ -35,10 +33,17 @@ jobs:
             **/Makefile
             Makefile
 
-      - name: Build Docker Images
+      - name: Build Docker and download packages in parallel
         if: env.GIT_DIFF
-        run: make docker-build-all
-      
+        run: |
+          set -e
+          echo "Starting docker build and go mod download in parallel..."
+          (make docker-build-debug &) && \
+          (make docker-build-hermes &) && \
+          (go mod download &) && \
+          wait
+          echo "Both tasks completed."
+
       - name: Test E2E
         if: env.GIT_DIFF
         env:
