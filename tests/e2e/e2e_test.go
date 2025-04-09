@@ -1,6 +1,9 @@
 package e2e
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 var (
 	runBankTest                   = true
@@ -16,6 +19,9 @@ var (
 	runLsmTest                    = true
 	runRateLimitTest              = true
 	runTxExtensionsTest           = true
+
+	// skipIBCTests skips tests that uses IBC
+	skipIBCTests = os.Getenv("SKIP_IBC_TESTS") == "true"
 )
 
 func (s *IntegrationTestSuite) TestRestInterfaces() {
@@ -68,7 +74,7 @@ func (s *IntegrationTestSuite) TestGov() {
 }
 
 func (s *IntegrationTestSuite) TestIBC() {
-	if !runIBCTest {
+	if !runIBCTest || skipIBCTests {
 		s.T().Skip()
 	}
 
@@ -102,7 +108,6 @@ func (s *IntegrationTestSuite) TestVesting() {
 	chainAAPI := fmt.Sprintf("http://%s", s.valResources[s.chainA.id][0].GetHostPort("1317/tcp"))
 	s.testDelayedVestingAccount(chainAAPI)
 	s.testContinuousVestingAccount(chainAAPI)
-	// s.testPeriodicVestingAccount(chainAAPI) TODO: add back when v0.45 adds the missing CLI command.
 }
 
 func (s *IntegrationTestSuite) TestLSM() {

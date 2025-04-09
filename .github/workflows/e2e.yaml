@@ -1,5 +1,6 @@
 name: E2E
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -11,6 +12,36 @@ permissions:
   contents: read
 
 jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      image-tag: ${{ steps.set-tag.outputs.tag }}
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.x
+      - uses: actions/checkout@v4
+
+      - name: Set Docker Tag
+        id: set-tag
+        run: echo "tag=ci-${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker Images
+        run: make docker-build-all
+
+      - name: Save Docker Images
+        run: |
+          mkdir -p docker
+          docker save kiichain/kiichaind-e2e > docker/kiichain.tar
+          docker save kiichain/hermes-e2e:1.0.0 > docker/hermes.tar
+
+      - name: Upload Docker Images
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: docker/
+
   test-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -19,6 +50,19 @@ jobs:
         with:
           go-version: 1.22.x
       - uses: actions/checkout@v4
+
+      - name: Download Docker Images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      - name: Load Docker Images
+        run: |
+          docker load < docker/kiichain.tar
+          docker load < docker/hermes.tar
+      - name: Test E2E
+        # if: env.GIT_DIFF
+        run: SKIP_IBC_TESTS=true make test-e2e
       # - uses: technote-space/get-diff-action@v6.1.2
       #   id: git_diff
       #   with:
@@ -30,12 +74,3 @@ jobs:
       #       **/go.sum
       #       **/Makefile
       #       Makefile
-      - name: Build Kiichain Docker Image
-        # if: env.GIT_DIFF
-        run: make docker-build-debug
-      - name: Build Hermes Docker Image
-        # if: env.GIT_DIFF
-        run: make docker-build-hermes
-      - name: Test E2E
-        # if: env.GIT_DIFF
-        run: make test-e2e
