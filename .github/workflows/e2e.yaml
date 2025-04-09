@@ -38,11 +38,21 @@ jobs:
         run: |
           set -e
           echo "Starting docker build and go mod download in parallel..."
-          (make docker-build-debug &) && \
-          (make docker-build-hermes &) && \
-          (go mod download &) && \
-          wait
-          echo "Both tasks completed."
+
+          make docker-build-debug &
+          PID1=$!
+
+          make docker-build-hermes &
+          PID2=$!
+
+          go mod download &
+          PID3=$!
+
+          wait $PID1
+          wait $PID2
+          wait $PID3
+
+          echo "All tasks completed."
 
       - name: Test E2E
         if: env.GIT_DIFF
