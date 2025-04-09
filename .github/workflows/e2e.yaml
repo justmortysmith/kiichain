@@ -23,10 +23,6 @@ jobs:
           go-version: 1.22.x
       - uses: actions/checkout@v4
 
-      - name: Set Docker Tag
-        id: set-tag
-        run: echo "tag=ci-${{ github.sha }}" >> $GITHUB_OUTPUT
-
       - name: Build Docker Images
         run: make docker-build-all
 
@@ -56,6 +52,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: docker-images
+          path: ./docker
 
       - name: Load Docker Images
         run: |
