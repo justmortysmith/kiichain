@@ -75,6 +75,7 @@ func (s *IntegrationTestSuite) TestGov() {
 
 func (s *IntegrationTestSuite) TestIBC() {
 	if !runIBCTest || skipIBCTests {
+		s.T().Log("skipping IBC e2e tests...")
 		s.T().Skip()
 	}
 
@@ -111,14 +112,16 @@ func (s *IntegrationTestSuite) TestVesting() {
 }
 
 func (s *IntegrationTestSuite) TestLSM() {
-	if !runLsmTest {
+	if !runLsmTest || skipIBCTests {
+		s.T().Log("skipping LSM e2e tests...")
 		s.T().Skip()
 	}
 	s.testLSM()
 }
 
 func (s *IntegrationTestSuite) TestRateLimit() {
-	if !runRateLimitTest {
+	if !runRateLimitTest || skipIBCTests {
+		s.T().Log("skipping rate limit e2e tests...")
 		s.T().Skip()
 	}
 	s.testAddRateLimits()

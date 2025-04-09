@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  build-images:
+  test-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       image-tag: ${{ steps.set-tag.outputs.tag }}
     steps:
@@ -23,52 +23,24 @@ jobs:
           go-version: 1.22.x
       - uses: actions/checkout@v4
 
+      - uses: technote-space/get-diff-action@v6.1.2
+        id: git_diff
+        with:
+          PATTERNS: |
+            **/*.go
+            go.mod
+            go.sum
+            **/go.mod
+            **/go.sum
+            **/Makefile
+            Makefile
+
       - name: Build Docker Images
+        if: env.GIT_DIFF
         run: make docker-build-all
-
-      - name: Save Docker Images
-        run: |
-          mkdir -p docker
-          docker save kiichain/kiichaind-e2e > docker/kiichain.tar
-          docker save kiichain/hermes-e2e:1.0.0 > docker/hermes.tar
-
-      - name: Upload Docker Images
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-images
-          path: docker/
-
-  test-e2e:
-    runs-on: ubuntu-latest
-    needs: build-images
-    timeout-minutes: 45
-    steps:
-      - uses: actions/setup-go@v5
-        with:
-          go-version: 1.22.x
-      - uses: actions/checkout@v4
-
-      - name: Download Docker Images
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-images
-          path: ./docker
-
-      - name: Load Docker Images
-        run: |
-          docker load < docker/kiichain.tar
-          docker load < docker/hermes.tar
+      
       - name: Test E2E
-        # if: env.GIT_DIFF
-        run: SKIP_IBC_TESTS=true make test-e2e
-      # - uses: technote-space/get-diff-action@v6.1.2
-      #   id: git_diff
-      #   with:
-      #     PATTERNS: |
-      #       **/*.go
-      #       go.mod
-      #       go.sum
-      #       **/go.mod
-      #       **/go.sum
-      #       **/Makefile
-      #       Makefile
+        if: env.GIT_DIFF
+        env:
+          SKIP_IBC_TESTS: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
+        run: make test-e2e
