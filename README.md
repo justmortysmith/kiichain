@@ -1,10 +1,10 @@
-**** Title:****
+** Title:**
 
 ```
 Add basic whitelist check to feeless transaction logic
 ```
 
-**** Pull Request Description:****
+** Pull Request Description:**
 
 ```
 Hi team,
