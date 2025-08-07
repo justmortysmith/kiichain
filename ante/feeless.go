@@ -3,6 +3,7 @@ package ante
 import (
 	"errors"
 	"math"
+	"strings"
 
 	"cosmossdk.io/collections"
 
@@ -12,18 +13,16 @@ import (
 	oracletypes "github.com/kiichain/kiichain/v4/x/oracle/types"
 )
 
-// FeelessDecorator defines a decorator that allows feeless transaction based on conditions
+// FeelessDecorator allows specific transactions (e.g., oracle votes) to be executed without deducting fees.
 type FeelessDecorator struct {
-	// feeDecorator is the SDK fee decorator that deducts fees from the fee payer
 	feeDecorator sdk.AnteDecorator
-	// oracleKeeper is one of the modules that has feeless transactions
 	oracleKeeper *oraclekeeper.Keeper
 }
 
-// Type assertion for the FeelessDecorator
+// Ensure FeelessDecorator satisfies sdk.AnteDecorator interface
 var _ sdk.AnteDecorator = FeelessDecorator{}
 
-// NewFeelessDecorator creates a new FeelessDecorator
+// NewFeelessDecorator returns a new instance of FeelessDecorator
 func NewFeelessDecorator(feeDecorator sdk.AnteDecorator, oracleKeeper *oraclekeeper.Keeper) FeelessDecorator {
 	return FeelessDecorator{
 		feeDecorator: feeDecorator,
@@ -31,43 +30,36 @@ func NewFeelessDecorator(feeDecorator sdk.AnteDecorator, oracleKeeper *oraclekee
 	}
 }
 
-// AnteHandle executes the antehandler logic for feeless transactions
-// This checks if the transaction is gasless and if so, it skips the fee deduction
-// This also force the TX to take
-func (gd FeelessDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
-	// Check if the transaction is gasless
-	isFeeless, err := gd.IsTxFeeless(ctx, tx)
+// AnteHandle implements fee skipping logic for feeless transactions
+func (fd FeelessDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+	isFeeless, err := fd.IsTxFeeless(ctx, tx)
 	if err != nil {
 		return ctx, err
 	}
 
-	// If feeless, ignore fee deduction
 	if isFeeless {
+		// Set maximum priority so the transaction is still processed fast
 		ctx = ctx.WithPriority(math.MaxInt64)
 		return next(ctx, tx, simulate)
 	}
 
-	// Go to the next ante handler using the No Consumption Gas Meter
-	return gd.feeDecorator.AnteHandle(ctx, tx, simulate, next)
+	// Otherwise, proceed with standard fee deduction
+	return fd.feeDecorator.AnteHandle(ctx, tx, simulate, next)
 }
 
-// IsTxFeeless checks if the transaction is feeless
-func (gd FeelessDecorator) IsTxFeeless(ctx sdk.Context, tx sdk.Tx) (bool, error) {
-	// Check if the transaction has exactly one message
-	// If it has any amount different than one, we can return that its not gasless
-	// This protects against DDoS attacks where a transaction has multiple messages
+// IsTxFeeless determines whether the transaction qualifies as feeless
+func (fd FeelessDecorator) IsTxFeeless(ctx sdk.Context, tx sdk.Tx) (bool, error) {
+	// Disallow multi-message feeless transactions for spam protection
 	if len(tx.GetMsgs()) != 1 {
 		return false, nil
 	}
 
-	// Iterate all the msgs on the tx
+	// Evaluate the message type
 	for _, msg := range tx.GetMsgs() {
 		switch m := msg.(type) {
 		case *oracletypes.MsgAggregateExchangeRateVote:
-			// Check if the message is feeless
-			return gd.MsgAggregateExchangeRateVoteIsFeeless(ctx, m)
+			return fd.MsgAggregateExchangeRateVoteIsFeeless(ctx, m)
 		default:
-			// We can return that its not gasless
 			return false, nil
 		}
 	}
@@ -75,37 +67,33 @@ func (gd FeelessDecorator) IsTxFeeless(ctx sdk.Context, tx sdk.Tx) (bool, error)
 	return false, nil
 }
 
-// MsgAggregateExchangeRateVoteIsFeeless checks if the MsgAggregateExchangeRateVote is feeless
-// A feeless MsgAggregateExchangeRateVote is one that has not been casted yet
-// and the feeder is allowed to vote for the validator
-func (gd FeelessDecorator) MsgAggregateExchangeRateVoteIsFeeless(ctx sdk.Context, msg *oracletypes.MsgAggregateExchangeRateVote) (bool, error) {
-	// Validate the feeder address
+// MsgAggregateExchangeRateVoteIsFeeless returns true if the vote is valid and not already submitted
+func (fd FeelessDecorator) MsgAggregateExchangeRateVoteIsFeeless(ctx sdk.Context, msg *oracletypes.MsgAggregateExchangeRateVote) (bool, error) {
+	// Decode feeder address
 	feederAddr, err := sdk.AccAddressFromBech32(msg.Feeder)
 	if err != nil {
 		return false, err
 	}
 
-	// Validate the validator address
+	// Decode validator address
 	valAddr, err := sdk.ValAddressFromBech32(msg.Validator)
 	if err != nil {
 		return false, err
 	}
 
-	// Validate if the feeder is allowed to vote
-	err = gd.oracleKeeper.ValidateFeeder(ctx, feederAddr, valAddr)
-	if err != nil {
+	// Check if feeder is authorized for the validator
+	if err := fd.oracleKeeper.ValidateFeeder(ctx, feederAddr, valAddr); err != nil {
 		return false, err
 	}
 
-	// Check if a vote was already casted
-	_, err = gd.oracleKeeper.AggregateExchangeRateVote.Get(ctx, valAddr)
+	// Check if the validator has already submitted a vote
+	_, err = fd.oracleKeeper.AggregateExchangeRateVote.Get(ctx, valAddr)
 
-	// If the error is not nil and the error is not found means that the vote was not casted yet,
+	// If not found, then this is a new vote => feeless
 	if err != nil && errors.Is(err, collections.ErrNotFound) {
-		// This means that the vote is feeless
 		return true, nil
 	}
 
-	// Reaching this point means that the data exists or there is an error other than not found
+	// Otherwise, it's either already voted or an unexpected error
 	return false, err
 }
